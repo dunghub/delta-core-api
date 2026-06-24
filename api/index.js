@@ -9,7 +9,7 @@ module.exports = async (req, res) => {
     if (!targetUrl) return res.status(400).json({ success: false, message: "Thiếu tham số liên kết ?url=" });
 
     try {
-        // Sử dụng cổng luồng ngầm công khai liên thông để bypass hộ dải IP bị xích của Vercel
+        // 🔥 GỌI QUA CỔNG API TRUNG GIAN SẠCH ĐỂ VƯỢT TƯỜNG LỬA CHỮA CHÁY
         const bypassProviderUrl = `https://vercel.app{encodeURIComponent(targetUrl)}`;
         const response = await axios.get(bypassProviderUrl, { timeout: 20000 });
         
@@ -28,6 +28,6 @@ module.exports = async (req, res) => {
             }
         } catch (e) {}
         
-        return res.status(500).json({ success: false, message: `Hệ thống Plato chặn IP Vercel của bạn: ${error.message}` });
+        return res.status(500).json({ success: false, message: `Hệ thống Plato chặn IP Vercel của bạn hoặc code lỗi: ${error.message}` });
     }
 };

@@ -1,8 +1,8 @@
 {
   "name": "delta-core-api",
   "version": "1.0.0",
-  "description": "API xử lý luồng bypass Delta tối ưu hóa cho Vercel Serverless",
-  "main": "api/index.js",
+  "description": "API xử lý luồng bypass Delta tối ưu hóa cho Vercel",
+  "main": "index.js",
   "dependencies": {
     "axios": "^1.7.0"
   },

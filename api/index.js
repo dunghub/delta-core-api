@@ -1,7 +1,5 @@
-// api/index.js - Bản Ép Luồng Phân Giải Cấp Cao Chống Block IP Proxy
+// api/index.js - Cổng Phân Giải API Thay Đổi Thuật Toán Bóc Tách
 const axios = require('axios');
-const cheerio = require('cheerio');
-const CryptoJS = require('crypto-js');
 
 module.exports = async (req, res) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
@@ -19,54 +17,35 @@ module.exports = async (req, res) => {
             formattedUrl = 'https://' + formattedUrl;
         }
 
-        // TỰ ĐỘNG ĐIỀU HƯỚNG SANG CỔNG ĐÁM MÂY GIẢI MÃ SẠCH (Ép Chữ Ký Trình Duyệt Ngầm)
-        // Cổng này sẽ lo phần vượt Cloudflare Turnstile ẩn của Platoboost/LootLabs thay cho proxy của bạn
-        const bypassGatewayUrl = `https://bypass.vip{encodeURIComponent(formattedUrl)}`;
-        
-        const response = await axios.get(bypassGatewayUrl, { 
-            timeout: 25000,
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36'
-            }
+        // Gọi thẳng sang luồng bọc API phân giải hệ thống đã được mã hóa sẵn chữ ký thiết bị sạch
+        // Nó sẽ tự động giải quyết lớp chặn hành vi của cả Platoboost lẫn LootLabs
+        const response = await axios.get(`https://bypass.vip{encodeURIComponent(formattedUrl)}`, { 
+            timeout: 22000,
+            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36' }
         });
 
-        // Xử lý dữ liệu trả về từ cổng bẻ khóa thông minh
         if (response.data && response.data.status === "success") {
-            const extractedKey = response.data.result || response.data.destination || response.data.key || "";
-            
-            if (extractedKey && extractedKey.length > 5 && !extractedKey.includes("{")) {
-                return res.status(200).json({ 
-                    success: true, 
-                    key: extractedKey.trim() 
-                });
+            const keyResult = response.data.result || response.data.destination || response.data.key || "";
+            if (keyResult && keyResult.length > 5 && !keyResult.includes("{")) {
+                return res.status(200).json({ success: true, key: keyResult.trim() });
             }
         }
 
-        // Bẫy thông báo lỗi chi tiết từ hệ thống phân giải
-        const serverMsg = response.data && response.data.message ? response.data.message : "Liên kết đã hết hạn hoặc phiên làm việc bị sập.";
-        return res.status(200).json({ success: false, message: serverMsg });
-
-    } catch (error) {
-        console.error(`[Lỗi API Luồng] ${error.message}`);
-        
-        // Đoạn code cứu cánh cuối cùng nếu cổng đám mây chính bị nghẽn (Gửi sang cổng dự phòng phụ)
+        // Kế hoạch dự phòng ngầm bẫy lỗi sang cổng phụ Uneti Core nếu cổng chính trả về lỗi
         try {
-            const backupUrl = `https://uneti-bot.xyz{encodeURIComponent(targetUrl)}`;
-            const backupRes = await axios.get(backupUrl, { timeout: 10000 });
-            
+            const backupRes = await axios.get(`https://uneti-bot.xyz{encodeURIComponent(formattedUrl)}`, { timeout: 8000 });
             if (backupRes.data && (backupRes.data.success === true || backupRes.data.status === "success")) {
                 const backupKey = backupRes.data.key || backupRes.data.result || backupRes.data.destination || "";
                 if (backupKey) {
                     return res.status(200).json({ success: true, key: backupKey.trim() });
                 }
             }
-        } catch (backupErr) {
-            // Chấp nhận lỗi nếu cả hai cổng mạng cùng sập
-        }
+        } catch (e) {}
 
-        return res.status(200).json({ 
-            success: false, 
-            message: `Tường lửa chặn kết nối: ${error.message}. Hãy gõ lại lệnh sau vài giây!` 
-        });
+        const errorText = response.data && response.data.message ? response.data.message : "Liên kết đã quá hạn hoặc không đúng phiên.";
+        return res.status(200).json({ success: false, message: errorText });
+
+    } catch (error) {
+        return res.status(200).json({ success: false, message: `Hệ thống phân giải từ chối bóc tách: ${error.message}` });
     }
 };

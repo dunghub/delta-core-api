@@ -1,12 +1,14 @@
 {
-  "name": "delta-core-api",
+  "name": "delta-bypass-bot",
   "version": "1.0.0",
-  "description": "API riêng giải mã hệ thống Platoboost/Delta bảo mật cao bản cộng đồng miễn phí",
-  "main": "api/index.js",
+  "description": "Bot Discord Bypass Key Delta độc lập không phụ thuộc API cộng đồng",
+  "main": "bot.js",
   "dependencies": {
     "axios": "^1.7.2",
-    "cheerio": "^1.0.0-rc.12",
-    "crypto-js": "^4.2.0",
-    "https-proxy-agent": "^7.0.0"
+    "discord.js": "^14.15.3",
+    "dotenv": "^16.4.5",
+    "puppeteer": "^22.12.1",
+    "puppeteer-extra": "^3.3.6",
+    "puppeteer-extra-plugin-stealth": "^2.11.2"
   }
 }

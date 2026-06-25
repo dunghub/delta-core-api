@@ -1,114 +1,128 @@
+// api/index.js - Cổng phân giải API riêng chạy trên Vercel Serverless Function
 const axios = require('axios');
-const cheerio = require('cheerio'); // Thư viện bóc tách thẻ script động được khai báo trong package.json
+const cheerio = require('cheerio');
+const CryptoJS = require('crypto-js');
 
+/**
+ * Hàm sinh chuỗi ngẫu nhiên giúp ép Proxy dân cư giữ nguyên 1 địa chỉ IP duy nhất suốt luồng chạy
+ */
+function generateSessionId() {
+    return Math.floor(100000 + Math.random() * 900000).toString();
+}
+
+// Handler chính xử lý Request API theo tiêu chuẩn Vercel Serverless
 module.exports = async (req, res) => {
-    // 1. Cấu hình các Header CORS bắt buộc để Bot nhận được dữ liệu JSON
+    // Cho phép gọi API từ mọi nguồn (Tránh lỗi CORS nếu gọi từ trình duyệt)
     res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
     if (req.method === 'OPTIONS') {
         return res.status(200).end();
     }
 
+    // Lấy tham số ?url= từ request bot gửi sang
     const targetUrl = req.query.url;
+
     if (!targetUrl) {
-        return res.status(400).json({ success: false, message: "Thiếu tham số liên kết ?url=" });
+        return res.status(400).json({ success: false, message: "Thiếu tham số đường dẫn (url)." });
     }
 
+    const sessionId = generateSessionId();
+
+    // ==========================================================
+    // ⚙️ CẤU HÌNH TÀI KHOẢN PROXY DÂN CƯ CỦA BẠN TẠI ĐÂY
+    // ==========================================================
+    const proxyConfig = {
+        protocol: 'http',
+        host: 'THAY_IP_HOAC_HOST_PROXY_CUA_BAN', // Ví dụ: pr.ox_y_ho_st.com
+        port: 8000,                            // Số cổng Port proxy của bạn
+        auth: {
+            username: `THAY_USER_PROXY_CUA_BAN-session-${sessionId}`, // Ép giữ IP bằng đuôi -session-
+            password: 'THAY_PASSWORD_PROXY_CUA_BAN'                  // Mật khẩu proxy của bạn
+        }
+    };
+
+    // Khởi tạo Client Axios dùng chung để thừa hưởng Cookie và IP cố định trong luồng
+    const botAgent = axios.create({
+        proxy: proxyConfig,
+        timeout: 25000, // Khớp với thời gian chờ tối đa 30s của bot Discord
+        headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.9',
+            'Sec-Ch-Ua': '"Google Chrome";v="125", "Chromium";v="125", "Not.A/Brand";v="24"',
+            'Sec-Ch-Ua-Mobile': '?0',
+            'Sec-Ch-Ua-Platform': '"Windows"',
+            'Cache-Control': 'max-age=0'
+        }
+    });
+
     try {
-        // LUỒNG 1: Trích xuất mã ID (HWID) từ chuỗi URL Delta người dùng nhập vào
-        const parsedUrl = new URL(targetUrl);
-        const deltaId = parsedUrl.searchParams.get('d') || parsedUrl.searchParams.get('id');
+        // ==========================================================
+        // BƯỚC 1: Truy cập link gốc của người dùng gửi để lấy Token phiên chạy
+        // ==========================================================
+        const responseStep1 = await botAgent.get(targetUrl);
+        const $ = cheerio.load(responseStep1.data);
         
-        if (!deltaId) {
-            return res.status(400).json({ success: false, message: "Định dạng link Delta không hợp lệ (Thiếu tham số mã hóa id hoặc d)" });
+        let targetToken = "";
+        const urlParams = new URLSearchParams(new URL(targetUrl).search);
+        if (urlParams.has('id')) targetToken = urlParams.get('id');
+        if (urlParams.has('token')) targetToken = urlParams.get('token');
+
+        if (!targetToken) {
+            targetToken = $('input[name="token"]').val() || $('input[id="token"]').val() || "";
         }
 
-        // LUỒNG 2: Giả lập gửi gói tin POST xác thực thẳng đến cổng API nội bộ của Platoboost
-        // Thay vì xem quảng cáo, code sẽ dùng chính tham số d để "Claim" Key trực tiếp từ hệ thống của họ
-        const bypassHeaders = {
-            'User-Agent': 'Mozilla/5.0 (Linux; Android 13; SM-S901B) AppleWebKit/537.36 (KHTML, Gecko) Chrome/124.0.0.0 Mobile Safari/537.36', // Ép vân tay trình duyệt điện thoại Android
-            'Accept': 'application/json, text/plain, */*',
-            'Accept-Language': 'vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7',
-            'Content-Type': 'application/json',
-            'Origin': 'https://auth.platorelay.com',
-            'Referer': targetUrl, // Gán link gốc làm trang chuyển hướng hợp lệ để vượt kiểm tra tường lửa
-            'Sec-Fetch-Dest': 'empty',
-            'Sec-Fetch-Mode': 'cors',
-            'Sec-Fetch-Site': 'same-origin',
-            'X-Requested-With': 'XMLHttpRequest'
-        };
-
-        let foundKey = "";
-
-        try {
-            // Gửi lệnh POST nạp dữ liệu phiên trực tiếp để yêu cầu cấp mã Token của Delta
-            const authResponse = await axios.post('https://platorelay.com', {
-                data: deltaId
-            }, { 
-                headers: bypassHeaders,
-                timeout: 7000 // Chờ tối đa 7 giây để tránh quá tải bộ nhớ Vercel
-            });
-
-            if (authResponse.data && authResponse.data.key) {
-                foundKey = authResponse.data.key;
-            } else if (authResponse.data && authResponse.data.token) {
-                foundKey = authResponse.data.token;
-            }
-        } catch (postError) {
-            console.log("Cổng POST bị thắt chặt, chuyển hướng sang luồng bóc tách Token script...");
-        }
-
-        // LUỒNG 3 (Dự phòng độc lập): Nếu cổng POST Claim bị chặn, cào thẳng HTML của trang xác thực
-        // Sử dụng Cheerio để tìm kiếm các hàm sinh mã Key chạy ẩn dưới nền JavaScript của Client
-        if (!foundKey) {
-            const htmlResponse = await axios.get(targetUrl, { 
-                headers: { 'User-Agent': bypassHeaders['User-Agent'] },
-                timeout: 5000 
-            });
-            
-            const $ = cheerio.load(htmlResponse.data);
-            const htmlContent = htmlResponse.data;
-
-            // Tìm trong tất cả các thẻ Script xem có biến lưu trữ key động không
-            $('script').each((index, element) => {
-                const scriptText = $(element).html();
-                if (scriptText && (scriptText.includes('key') || scriptText.includes('token'))) {
-                    const match = scriptText.match(/"key"\s*:\s*"([A-Za-z0-9_\-]+)"/) || scriptText.match(/token\s*=\s*'([A-Za-z0-9_\-]+)'/);
-                    if (match && match[1]) {
-                        foundKey = match[1];
-                    }
-                }
-            });
-
-            // Nếu quét thẻ con không ra, dùng Regex bốc tách chuỗi ký tự thô trên toàn bộ HTML toàn văn
-            if (!foundKey) {
-                const globalMatch = htmlContent.match(/🔑\s*Key\s*:\s*([A-Za-z0-9_\-]+)/) || 
-                                    htmlContent.match(/Your\s*Key\s*:\s*([A-Za-z0-9_\-]+)/) ||
-                                    htmlContent.match(/"key"\s*:\s*"([A-Za-z0-9_\-]+)"/);
-                if (globalMatch && globalMatch[1]) foundKey = globalMatch[1];
-            }
-        }
-
-        // 4. Kiểm tra dữ liệu thu được cuối cùng và trả kết quả sạch về cho bot.js
-        if (foundKey && foundKey.length > 5 && !foundKey.includes("{")) {
-            return res.status(200).json({ 
-                success: true, 
-                key: foundKey.trim(),
-                method: "Bypass Private Cloud Clean"
+        if (!targetToken) {
+            return res.status(400).json({ 
+                success: false, 
+                message: "Tường lửa đã làm mới Token bảo mật. Vui lòng lấy link mới tinh từ game!" 
             });
         }
 
-        return res.status(400).json({ 
-            success: false, 
-            message: "Tường lửa Platoboost đã làm mới Token bảo mật. Vui lòng lấy liên kết mới tinh từ Roblox để bot chạy lại!" 
+        // ==========================================================
+        // BƯỚC 2: Gửi gói tin POST xác thực mở khóa (Đi tiếp bằng IP của Bước 1)
+        // ==========================================================
+        const responseStep2 = await botAgent.post('https://platoboost.com', {
+            token: targetToken,
+            type: "delta"
+        });
+
+        if (!responseStep2.data || !responseStep2.data.success) {
+            return res.status(403).json({ 
+                success: false, 
+                message: "Cổng API Platoboost từ chối xác thực gói tin (Sai chữ ký/Hành vi bot)." 
+            });
+        }
+
+        // ==========================================================
+        // BƯỚC 3: Giải mã chuỗi dữ liệu kết quả key cuối cùng
+        // ==========================================================
+        let finalKey = "";
+        
+        if (responseStep2.data.encryptedData) {
+            const bytes = CryptoJS.AES.decrypt(responseStep2.data.encryptedData, 'PlatoboostSecretKey123');
+            finalKey = bytes.toString(CryptoJS.enc.Utf8);
+        } else {
+            finalKey = responseStep2.data.key || responseStep2.data.decryptedKey || "";
+        }
+
+        if (!finalKey) {
+            return res.status(500).json({ success: false, message: "Hệ thống bóc tách hoàn tất nhưng chuỗi mã Key rỗng." });
+        }
+
+        // Trả kết quả JSON sạch chuẩn định dạng về cho Bot Discord nhận diện
+        return res.status(200).json({
+            success: true,
+            key: finalKey.trim()
         });
 
     } catch (error) {
+        console.error(`[Lỗi Luồng Chạy] ${error.message}`);
         return res.status(500).json({ 
             success: false, 
-            message: `Lỗi luồng xử lý dữ liệu API độc lập: ${error.message}` 
+            message: `Tường lửa chặn kết nối: ${error.message}` 
         });
     }
 };

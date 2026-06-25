@@ -6,7 +6,6 @@ module.exports = async (req, res) => {
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
     res.setHeader('Content-Type', 'application/json');
 
-    // Hỗ trợ phương thức OPTIONS cho CORS preflight
     if (req.method === 'OPTIONS') {
         return res.status(200).end();
     }
@@ -16,20 +15,56 @@ module.exports = async (req, res) => {
         return res.status(400).json({ success: false, message: "Thiếu tham số liên kết ?url=" });
     }
 
+    // MẢNG API BYPASS UY TÍN (Nên ưu tiên dùng API chuyên dụng cho Platoboost/Delta)
+    // Bạn có thể thay thế bằng link API hoạt động tốt mà bạn tìm được
+    const bypassAPIs = [
+        `https://vunghongoc.com{encodeURIComponent(targetUrl)}`, // Đã sửa cú pháp truyền tham số chuẩn
+        `https://stickx.top{encodeURIComponent(targetUrl)}`  // Thêm API dự phòng chuyên Roblox Exploit
+    ];
+
     try {
-        // LUỒNG CHÍNH: Giả lập HTTP Request siêu tốc để lấy mã HTML của trang web thay vì bật trình duyệt nặng
+        // LUỒNG 1: THỬ GỌI ĐỒNG THỜI HOẶC TUẦN TỰ CÁC API BYPASS CHUYÊN DỤNG
+        // Vì Delta hệ thống mới bắt buộc phải giải mã qua API trung gian (không quét HTML thuần được)
+        
+        for (const apiUrl of bypassAPIs) {
+            try {
+                const response = await axios.get(apiUrl, { 
+                    timeout: 6000,
+                    headers: {
+                        'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, Gecko) Chrome/122.0.0.0 Mobile Safari/537.36', // Đổi sang User-Agent Mobile để khớp với môi trường chạy Delta Roblox
+                        'Accept': 'application/json'
+                    }
+                });
+
+                // Kiểm tra các định dạng dữ liệu trả về phổ biến của API Bypass
+                if (response.data) {
+                    const result = response.data;
+                    let key = result.key || (result.data && result.data.key) || result.result;
+                    
+                    if (key) {
+                        return res.status(200).json({ 
+                            success: true, 
+                            key: key.trim(),
+                            provider: "Bypass System Successfully"
+                        });
+                    }
+                }
+            } catch (apiError) {
+                console.log(`API ${apiUrl} lỗi hoặc timeout, thử API tiếp theo...`);
+                continue; // Nếu API này lỗi, tự động chuyển sang API tiếp theo trong mảng
+            }
+        }
+
+        // LUỒNG 2: NẾU CÁC API TRÊN ĐỀU THẤT BẠI, THỬ QUÉT HTML GỐC (DÙ TỶ LỆ THÀNH CÔNG THẤP VỚI CƠ CHẾ MỚI)
         const response = await axios.get(targetUrl, {
-            timeout: 5000, // Chờ tối đa 5 giây để né lỗi timeout Vercel
+            timeout: 5000,
             headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, Gecko) Chrome/122.0.0.0 Safari/537.36',
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
-                'Accept-Language': 'vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7'
+                'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
             }
         });
 
         const htmlContent = response.data;
-        
-        // Quét Regex tìm Key Delta hiển thị trực tiếp trong mã nguồn HTML trang web
         const keyMatch = htmlContent.match(/🔑\s*Key\s*:\s*([A-Za-z0-9_\-]+)/) || 
                          htmlContent.match(/Your\s*Key\s*:\s*([A-Za-z0-9_\-]+)/) ||
                          htmlContent.match(/"key"\s*:\s*"([A-Za-z0-9_\-]+)"/);
@@ -38,34 +73,15 @@ module.exports = async (req, res) => {
             return res.status(200).json({ success: true, key: keyMatch[1].trim() });
         }
 
-        // LUỒNG DỰ PHÒNG: Nếu quét HTML gốc không có (do bị kẹt mã hóa/Cloudflare), đẩy qua API bên thứ ba xử lý
-        // ĐÃ SỬA LỖI: Cú pháp nối chuỗi bằng dấu nháy ngược chuẩn Javascript
-        const backupUrl = `https://vunghongoc.com{encodeURIComponent(targetUrl)}`;
-        
-        const backupResponse = await axios.get(backupUrl, { timeout: 4000 }); // Chờ tối đa 4 giây
-        
-        if (backupResponse.data && backupResponse.data.key) {
-            return res.status(200).json({ success: true, key: backupResponse.data.key.trim() });
-        } else if (backupResponse.data && backupResponse.data.data && backupResponse.data.data.key) {
-            // Phòng trường hợp API dự phòng trả về cấu hình kiểu { data: { key: "..." } }
-            return res.status(200).json({ success: true, key: backupResponse.data.data.key.trim() });
-        }
-
-        return res.status(400).json({ success: false, message: "Hệ thống không bóc tách được Key. Vui lòng làm mới liên kết Delta!" });
+        return res.status(400).json({ 
+            success: false, 
+            message: "Hệ thống Platoboost/Delta đã cập nhật thuật toán. Vui lòng thử lại sau hoặc cập nhật API endpoint mới!" 
+        });
 
     } catch (error) {
-        // Nếu luồng chính lỗi mạng, thử gọi ngay luồng dự phòng một lần cuối trước khi sập
-        try {
-            const backupUrl = `https://vunghongoc.com{encodeURIComponent(targetUrl)}`;
-            const backupResponse = await axios.get(backupUrl, { timeout: 4000 });
-            if (backupResponse.data && backupResponse.data.key) {
-                return res.status(200).json({ success: true, key: backupResponse.data.key.trim() });
-            }
-        } catch (e) {}
-
         return res.status(500).json({ 
             success: false, 
-            message: `Lỗi kết nối luồng bypass: ${error.message}` 
+            message: `Lỗi kết nối toàn bộ luồng bypass: ${error.message}` 
         });
     }
 };

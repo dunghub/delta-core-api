@@ -1,30 +1,29 @@
-// api/index.js - Bản Ép Luồng Cộng Đồng Dùng Proxy Free Tự Động
+// api/index.js - Bản Ép Luồng Đa Năng Nâng Cấp Vòng Lặp Lọc Proxy Free Cực Mạnh
 const axios = require('axios');
 const cheerio = require('cheerio');
 const CryptoJS = require('crypto-js');
 const { HttpsProxyAgent } = require('https-proxy-agent');
 
-// Hàm tự động đi cào proxy free từ các nguồn uy tín công khai
+// Hàm cào proxy free từ các kho GitHub cập nhật liên tục từng phút
 async function fetchFreeProxies() {
     const sources = [
         'https://proxyscrape.com',
         'https://githubusercontent.com',
+        'https://githubusercontent.com', // Nguồn proxy mới siêu sạch
         'https://githubusercontent.com'
     ];
     
-    // Chọn ngẫu nhiên 1 nguồn để cào tránh bị trùng lặp
     const randomSource = sources[Math.floor(Math.random() * sources.length)];
     try {
-        const res = await axios.get(randomSource, { timeout: 5000 });
+        const res = await axios.get(randomSource, { timeout: 4000 });
         if (typeof res.data === 'string') {
-            // Tách các proxy thành mảng dòng sạch
             return res.data.split('\n').map(p => p.trim()).filter(p => p && p.includes(':'));
         }
     } catch (e) {
-        console.error("Lỗi cào proxy free:", e.message);
+        console.error("Lỗi cào nguồn proxy:", e.message);
     }
-    // Danh sách proxy free dự phòng cứng nếu cả 3 nguồn trên bị nghẽn
-    return ['103.152.118.234:80', '185.242.107.135:80', '43.200.77.12:80'];
+    // Dải proxy dự phòng cứng nếu server github nghẽn
+    return ['103.152.118.234:80', '185.242.107.135:80', '43.200.77.12:80', '117.250.3.34:8080'];
 }
 
 module.exports = async (req, res) => {
@@ -37,42 +36,69 @@ module.exports = async (req, res) => {
     const targetUrl = req.query.url;
     if (!targetUrl) return res.status(400).json({ success: false, message: "Thiếu tham số url." });
 
-    // 1. Lấy danh sách proxy free mới nhất về bộ nhớ tạm
     const proxyList = await fetchFreeProxies();
     
-    let maxRetries = 5; // Số lần tự động thử lại với proxy khác nếu bị lỗi
+    // ĐÃ NÂNG CẤP: Tăng số lần thử lại từ 5 lên 10 để bao quát dải proxy sống nhiều hơn
+    let maxRetries = 10; 
     let attempt = 0;
-    let errorMsg = "Tường lửa chặn kết nối";
+    let lastError = "Không tìm thấy proxy free nào hoạt động.";
 
-    // 2. VÒNG LẶP TUẦN HOÀN: Thử liên tục cho đến khi tìm được proxy free hoạt động
+    // LUỒNG XỬ LÝ 1: DÀNH CHO LINK IOS (LOOTLABS)
+    if (targetUrl.includes('lootlabs.gg')) {
+        while (attempt < maxRetries) {
+            attempt++;
+            const rawProxy = proxyList[Math.floor(Math.random() * proxyList.length)];
+            const proxyAgent = new HttpsProxyAgent(`http://${rawProxy}`);
+
+            try {
+                const urlObj = new URL(targetUrl);
+                const clientKey = urlObj.searchParams.get('s');
+                if (!clientKey) return res.status(400).json({ success: false, message: "Link LootLabs thiếu tham see 's' hợp lệ." });
+
+                const lootApi = await axios.get(`https://lootlabs.gg{clientKey}/redirect`, {
+                    httpsAgent: proxyAgent,
+                    httpAgent: proxyAgent,
+                    timeout: 5000,
+                    headers: {
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/125.0.0.0 Safari/537.36',
+                        'Origin': 'https://lootlabs.gg',
+                        'Referer': 'https://lootlabs.gg'
+                    }
+                });
+
+                if (lootApi.data && lootApi.data.redirect_url) {
+                    return res.status(200).json({ success: true, key: lootApi.data.redirect_url });
+                }
+            } catch (err) {
+                lastError = err.message;
+            }
+        }
+        return res.status(502).json({ success: false, message: `Lỗi kết nối LootLabs: ${lastError}` });
+    }
+
+    // LUỒNG XỬ LÝ 2: DÀNH CHO LINK ANDROID (PLATOBOOST)
     while (attempt < maxRetries) {
         attempt++;
-        // Bốc ngẫu nhiên 1 con proxy free từ danh sách cào được
         const rawProxy = proxyList[Math.floor(Math.random() * proxyList.length)];
-        const [proxyHost, proxyPort] = rawProxy.split(':');
-        
-        // Cấu hình Proxy Agent đi xuyên tường lửa
-        const proxyAgent = new HttpsProxyAgent(`http://${proxyHost}:${proxyPort}`);
+        const proxyAgent = new HttpsProxyAgent(`http://${rawProxy}`);
 
         const botAgent = axios.create({
             httpsAgent: proxyAgent,
             httpAgent: proxyAgent,
-            timeout: 6000, // Đặt timeout thấp (6s) để nếu proxy free chậm thì đổi ngay con khác
-            headers: {
+            timeout: 5000, // Đặt timeout 5 giây để bỏ qua nhanh proxy chết
+            headers: { 
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
                 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
-                'Accept-Language': 'en-US,en;q=0.9',
+                'Accept-Language': 'en-US,en;q=0.9'
             }
         });
 
         try {
-            // Chuẩn hóa định dạng URL tránh lỗi parse
             let formattedUrl = targetUrl;
             if (!formattedUrl.startsWith('http://') && !formattedUrl.startsWith('https://')) {
                 formattedUrl = 'https://' + formattedUrl;
             }
 
-            // BƯỚC 1: Gọi link Platoboost để bóc Token
             const responseStep1 = await botAgent.get(formattedUrl);
             const $ = cheerio.load(responseStep1.data);
             
@@ -81,45 +107,33 @@ module.exports = async (req, res) => {
                 const urlParams = new URLSearchParams(new URL(formattedUrl).search);
                 targetToken = urlParams.get('id') || urlParams.get('token') || "";
             } catch (e) {}
-
+            
             if (!targetToken) targetToken = $('input[name="token"]').val() || $('input[id="token"]').val() || "";
 
-            if (!targetToken) {
-                // Nếu không có token, bỏ qua proxy này và nhảy sang con proxy khác thử lại
-                continue; 
-            }
+            // Nếu proxy này cào trang bị trống (Cloudflare chặn) hoặc không ra token, tiếp tục đổi proxy khác ngay
+            if (!targetToken) continue;
 
-            // BƯỚC 2: Xác thực mở khóa bằng CHÍNH con proxy free đang sống này
             const responseStep2 = await botAgent.post('https://platoboost.com', {
                 token: targetToken,
                 type: "delta"
             });
 
             if (responseStep2.data && responseStep2.data.success) {
-                // BƯỚC 3: Giải mã Key
-                let finalKey = "";
-                if (responseStep2.data.encryptedData) {
-                    const bytes = CryptoJS.AES.decrypt(responseStep2.data.encryptedData, 'PlatoboostSecretKey123');
-                    finalKey = bytes.toString(CryptoJS.enc.Utf8);
-                } else {
-                    finalKey = responseStep2.data.key || responseStep2.data.decryptedKey || "";
-                }
-
+                let finalKey = responseStep2.data.encryptedData 
+                    ? CryptoJS.AES.decrypt(responseStep2.data.encryptedData, 'PlatoboostSecretKey123').toString(CryptoJS.enc.Utf8)
+                    : (responseStep2.data.key || responseStep2.data.decryptedKey || "");
+                
                 if (finalKey) {
-                    // TRẢ KẾT QUẢ VỀ NGAY nếu thành công, thoát khỏi vòng lặp
                     return res.status(200).json({ success: true, key: finalKey.trim() });
                 }
             }
         } catch (error) {
-            // Nếu proxy này bị lỗi kết nối hoặc bị chặn, lưu lại thông báo lỗi và tiếp tục vòng lặp
-            errorMsg = `Proxy [${proxyHost}] lỗi: ${error.message}`;
-            console.log(`[Thử lại lượt ${attempt}/${maxRetries}] Đang đổi proxy free khác...`);
+            lastError = error.message;
         }
     }
 
-    // Nếu đã thử hết 5 lần mà vẫn thất bại do proxy free chết sạch hoặc bị chặn loạt
     return res.status(502).json({ 
         success: false, 
-        message: `Đã thử liên tục ${maxRetries} dải proxy free cộng đồng nhưng đều bị tường lửa nghẽn mạch.` 
+        message: `Đã tự động lặp đổi liên tiếp ${maxRetries} proxy free nhưng đều gặp lỗi mạng (${lastError}).` 
     });
 };

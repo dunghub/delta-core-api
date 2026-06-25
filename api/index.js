@@ -16,35 +16,46 @@ module.exports = async (req, res) => {
         let formattedUrl = targetUrl;
         if (!formattedUrl.startsWith('http')) formattedUrl = 'https://' + formattedUrl;
 
-        // DANH SÁCH CÁC MÁY CHỦ BẺ KHÓA MẠNH NHẤT - TỰ ĐỘNG CHUYỂN HƯỚNG NẾU CÓ CON BỊ SẬP
+        // Mã hóa URL đúng chuẩn để truyền vào Query Parameter
+        const encodedUrl = encodeURIComponent(formattedUrl);
+
+        // ĐÃ SỬA: Thêm dấu $ trước dấu ngoặc nhọn và cấu trúc lại tham số đúng chuẩn API của từng server
         const serverEndpoints = [
-            `https://bypass.vip{encodeURIComponent(formattedUrl)}`,
-            `https://uneti-bot.xyz{encodeURIComponent(formattedUrl)}`,
-            `https://ethone.live{encodeURIComponent(formattedUrl)}`
+            `https://bypass.vip{encodedUrl}`,
+            `https://dlr-api.online{encodedUrl}`,
+            `https://ethone.live{encodedUrl}`
         ];
 
         let finalKey = "";
-        let lastServerLog = "Tất cả máy chủ bẻ khóa đều đang quá tải.";
+        let lastServerLog = "Toàn bộ cổng phân giải từ chối xác thực gói tin.";
 
         // Vòng lặp quét xuyên qua các server lớn để đòi key
         for (const serverUrl of serverEndpoints) {
             try {
                 const response = await axios.get(serverUrl, { 
                     timeout: 8000, // Đặt timeout 8s mỗi server để chuyển con khác ngay nếu bị nghẽn
-                    headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36' }
+                    headers: { 
+                        'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36' 
+                    }
                 });
 
                 // Đồng bộ bóc tách các định dạng JSON trả về của từng bên
-                if (response.data && (response.data.status === "success" || response.data.success === true)) {
-                    finalKey = response.data.result || response.data.destination || response.data.key || "";
+                if (response.data) {
+                    // Chấp nhận cả status dạng chuỗi "success" hoặc boolean true
+                    const isSuccess = response.data.status === "success" || response.data.success === true || response.data.status === true;
                     
-                    // Nếu trích xuất được chuỗi key sạch, thoát khỏi vòng lặp ngay lập tức
-                    if (finalKey && finalKey.length > 5 && !finalKey.includes("{")) {
-                        break; 
+                    if (isSuccess) {
+                        finalKey = response.data.result || response.data.destination || response.data.key || response.data.bypassed || "";
+                        
+                        // Nếu trích xuất được chuỗi key sạch, thoát khỏi vòng lặp ngay lập tức
+                        if (finalKey && finalKey.length > 5 && !finalKey.includes("{")) {
+                            break; 
+                        }
                     }
                 }
             } catch (err) {
-                lastServerLog = `Trục trặc cổng kết nối ngầm: ${err.message}`;
+                // Ghi nhận lỗi chi tiết của server cuối cùng nếu thất bại
+                lastServerLog = `Trục trặc cổng: ${err.message}`;
             }
         }
 

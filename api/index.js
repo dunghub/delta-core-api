@@ -1,8 +1,7 @@
-// api/index.js - Cổng Máy Chủ Chuyển Hướng Đa Tầng (API Pool Dự Phòng 0đ)
 const axios = require('axios');
 
 module.exports = async (req, res) => {
-    // Cấu hình Header chống lỗi chặn dải mạng
+    // Cấu hình Header chống lỗi chặn dải mạng chéo (CORS)
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
@@ -16,50 +15,49 @@ module.exports = async (req, res) => {
         let formattedUrl = targetUrl;
         if (!formattedUrl.startsWith('http')) formattedUrl = 'https://' + formattedUrl;
 
-        // Mã hóa URL đúng chuẩn để truyền vào Query Parameter
         const encodedUrl = encodeURIComponent(formattedUrl);
 
-        // ĐÃ SỬA: Thêm dấu $ trước dấu ngoặc nhọn và cấu trúc lại tham số đúng chuẩn API của từng server
+        // Danh sách các cổng bẻ khóa Platoboost/Delta tối tân nhất
         const serverEndpoints = [
-            `https://bypass.vip{encodedUrl}`,
-            `https://dlr-api.online{encodedUrl}`,
-            `https://ethone.live{encodedUrl}`
+            `https://stickx.top{encodedUrl}`,
+            `https://siryx.net{encodedUrl}`,
+            `https://bypass.vip{encodedUrl}`
         ];
 
         let finalKey = "";
-        let lastServerLog = "Toàn bộ cổng phân giải từ chối xác thực gói tin.";
+        let lastServerLog = "Toàn bộ cổng phân giải từ chối xác thực hoặc liên kết đã hết hạn.";
 
-        // Vòng lặp quét xuyên qua các server lớn để đòi key
+        // Vòng lặp quét tìm cổng hoạt động ổn định
         for (const serverUrl of serverEndpoints) {
             try {
                 const response = await axios.get(serverUrl, { 
-                    timeout: 8000, // Đặt timeout 8s mỗi server để chuyển con khác ngay nếu bị nghẽn
+                    timeout: 10000, // Đặt timeout 10 giây cho các link mã hóa cao
                     headers: { 
                         'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36' 
                     }
                 });
 
-                // Đồng bộ bóc tách các định dạng JSON trả về của từng bên
                 if (response.data) {
-                    // Chấp nhận cả status dạng chuỗi "success" hoặc boolean true
-                    const isSuccess = response.data.status === "success" || response.data.success === true || response.data.status === true;
-                    
-                    if (isSuccess) {
-                        finalKey = response.data.result || response.data.destination || response.data.key || response.data.bypassed || "";
-                        
-                        // Nếu trích xuất được chuỗi key sạch, thoát khỏi vòng lặp ngay lập tức
-                        if (finalKey && finalKey.length > 5 && !finalKey.includes("{")) {
-                            break; 
-                        }
+                    // Tự động bóc tách tất cả các dạng cấu trúc dữ liệu JSON trả về
+                    const potentialKey = response.data.key || 
+                                         response.data.result || 
+                                         response.data.destination || 
+                                         response.data.bypassed || 
+                                         (response.data.data && response.data.data.result);
+
+                    if (potentialKey && potentialKey.length > 5 && !potentialKey.includes("{")) {
+                        finalKey = potentialKey;
+                        break; 
                     }
                 }
             } catch (err) {
-                // Ghi nhận lỗi chi tiết của server cuối cùng nếu thất bại
-                lastServerLog = `Trục trặc cổng: ${err.message}`;
+                // Rút gọn tên domain lỗi để hiển thị log sạch
+                const domain = new URL(serverUrl).hostname;
+                lastServerLog = `Trục trặc tại cổng ${domain}: ${err.message}`;
             }
         }
 
-        // Trả kết quả sạch 100% về cho bot Dubo hiển thị bảng xanh
+        // Trả kết quả cuối cùng về cho bot Discord
         if (finalKey) {
             return res.status(200).json({ 
                 success: true, 

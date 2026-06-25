@@ -1,11 +1,12 @@
 {
   "name": "delta-core-api",
   "version": "1.0.0",
-  "description": "API riêng giải mã hệ thống Platoboost/Delta bảo mật cao",
+  "description": "API riêng giải mã hệ thống Platoboost/Delta bảo mật cao bản cộng đồng miễn phí",
   "main": "api/index.js",
   "dependencies": {
     "axios": "^1.7.2",
     "cheerio": "^1.0.0-rc.12",
-    "crypto-js": "^4.2.0"
+    "crypto-js": "^4.2.0",
+    "https-proxy-agent": "^7.0.0"
   }
 }

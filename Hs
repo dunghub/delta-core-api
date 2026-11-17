@@ -1,1 +1,20 @@
-
+repeat wait() until game:IsLoaded() and game.Players.LocalPlayer 
+getgenv().Key = "8c106070022719086782612e"
+getgenv().__BANANA_SCRIPT_ROUTE = "kaigod"
+Config = {
+    Team = "Pirates",
+    FastTween = true, -- low fps -> false plz
+    AutoHop = true, -- hop server to collect better fruit
+    HopWhenIdle = true,
+    FpsBoost = true,
+    FpsCap = 25,
+    BlockAcc = true,
+    BlackScreen = false,
+    CursedDualKatana = false,
+    SoulGuitar = false,
+    FarmBoneForx2EXP = false,
+    WebhookEnabled = false,
+    WebhookUrl = "",
+    WebhookIntervalMinutes = 5
+}
+return loadstring(game:HttpGet("https://banana-hub.xyz/loader/banana.lua"))()

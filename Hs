@@ -1,5 +1,5 @@
 repeat wait() until game:IsLoaded() and game.Players.LocalPlayer 
-getgenv().Key = "8c106070022719086782612e"
+getgenv().Key = "bbd45305063bf9e9ef807de9"
 getgenv().__BANANA_SCRIPT_ROUTE = "kaigod"
 Config = {
     Team = "Pirates",
